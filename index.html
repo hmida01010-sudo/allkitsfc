@@ -1215,39 +1215,12 @@ function openCheckout(){
     +'<option>United States</option><option>Canada</option><option>United Kingdom</option><option>Australia</option><option>Brazil</option><option>Argentina</option><option>France</option><option>Germany</option><option>Spain</option><option>Portugal</option><option>Italy</option><option>Morocco</option><option>Japan</option><option>South Korea</option><option>Mexico</option><option>Netherlands</option><option>Belgium</option><option>Sweden</option><option>Norway</option><option>Switzerland</option><option>Denmark</option><option>Poland</option><option>Saudi Arabia</option><option>Egypt</option><option>Nigeria</option><option>South Africa</option><option>Senegal</option><option>Colombia</option><option>Uruguay</option><option>Chile</option><option>Venezuela</option><option>Panama</option><option>Jamaica</option><option>Ecuador</option><option>Paraguay</option><option>New Zealand</option><option>Ireland</option><option>Greece</option><option>Turkey</option><option>UAE</option><option>Qatar</option><option>Iran</option><option>Other</option>'
     +'</select></div></div>'
     +'<div class="deliv-note" id="delivNote"></div>'
-    +'<div class="fsec">💳 Payment Method</div>'
-    +'<div class="pay-tabs">'
-    +'<button class="pt active" data-pt="card"><span class="pi-icon">💳</span><span class="pi-lbl">Card</span></button>'
-    +'<button class="pt" data-pt="paypal"><span class="pi-icon">🅿️</span><span class="pi-lbl">PayPal</span></button>'
-    +'<button class="pt" data-pt="apple"><span class="pi-icon">🍎</span><span class="pi-lbl">Apple Pay</span></button>'
-    +'<button class="pt" data-pt="gpay"><span class="pi-icon">G</span><span class="pi-lbl">Google Pay</span></button>'
-    +'</div>'
-    +'<div id="cardArea" class="card-area">'
-    +'<div class="fr2 full"><div class="fg"><label>Card Number</label><input id="cnum" placeholder="4242 4242 4242 4242" maxlength="19"></div></div>'
-    +'<div class="card-row"><div class="fg"><label>Expiry</label><input placeholder="MM / YY" maxlength="7"></div><div class="fg"><label>CVV</label><input placeholder="123" maxlength="4" type="password"></div><div class="fg"><label>Name on Card</label><input placeholder="CRISTIANO RONALDO"></div></div>'
-    +'</div>'
-    +'<div class="pay-alt" id="altPay"><div class="alt-icon">💳</div><p id="altMsg">You will be redirected to complete payment securely.</p></div>'
+    +'<div style="background:var(--off);border-radius:8px;padding:1rem;margin:1rem 0;text-align:center;font-size:.85rem;color:var(--tl)">🔒 You\'ll be redirected to our secure Stripe checkout to enter payment details.</div>'
     +'<button class="ck-btn" id="placeBtn"><span>🔒</span><span id="placeTotal">Place Order — $'+total.toFixed(2)+' USD</span></button>'
     +'<div class="ck-trust"><span>🔒 256-bit SSL</span><span>✅ Stripe Secured</span><span>🌍 Free Shipping</span><span>📦 Tracked Delivery</span></div>'
     +'<p style="font-size:.68rem;color:var(--mu);text-align:center;margin-top:.65rem">By placing your order you agree to our <button style="background:none;border:none;color:var(--pm);cursor:pointer;font-size:.68rem;text-decoration:underline;font-family:Inter" id="returnsLnk">returns policy</button>.</p>';
 
-  // Card number formatting
-  var cn=document.getElementById('cnum');
-  if(cn) cn.addEventListener('input',function(){var v=this.value.replace(/\D/g,'').substring(0,16);this.value=v.replace(/(.{4})/g,'$1 ').trim();});
 
-  // Payment tabs
-  document.querySelectorAll('.pt').forEach(function(tab){
-    tab.addEventListener('click',function(){
-      document.querySelectorAll('.pt').forEach(function(t){t.classList.remove('active');});
-      this.classList.add('active');
-      var type=this.dataset.pt;
-      document.getElementById('cardArea').style.display=type==='card'?'block':'none';
-      var altPay=document.getElementById('altPay');
-      altPay.style.display=type!=='card'?'block':'none';
-      var msgs={paypal:"You will be redirected to PayPal to complete payment securely.",apple:"Apple Pay will open - authenticate with Face ID or Touch ID.",gpay:"Google Pay will open to complete your payment securely."};
-      if(msgs[type]) document.getElementById('altMsg').textContent=msgs[type];
-    });
-  });
   document.getElementById('placeBtn').addEventListener('click',placeOrder);
   var rl=document.getElementById('returnsLnk');
   if(rl) rl.addEventListener('click',function(){closeModal();showPage('returns');});
@@ -1275,7 +1248,6 @@ function placeOrder(){
   if(!fn||!ln||!em||!ad||!cy||!ct){alert('Please fill in all required shipping fields.');return;}
 
   var total=cart.reduce(function(a,x){return a+x.price*x.qty;},0);
-  var itemsSummary=cart.map(function(i){return i.name+' ('+i.size+') x'+i.qty;}).join(', ');
   var ref='AKF-'+Date.now().toString(36).toUpperCase().slice(-6);
 
   // Save to admin panel
@@ -1285,19 +1257,38 @@ function placeOrder(){
   orders.push(order);
   try{localStorage.setItem('akfc3',JSON.stringify(orders));}catch(e){}
 
-  // Show redirecting state
+  // Show loading state
   var btn=document.getElementById('placeBtn');
-  btn.innerHTML='<span>⏳</span><span>Redirecting to secure payment…</span>';
+  btn.innerHTML='⏳ Redirecting to secure payment…';
   btn.disabled=true;
 
-  // Redirect to Stripe Payment Link with prefilled email + order ref
-  // Total is encoded in ref so you can verify — customer pays the correct amount on Stripe
-  var stripeUrl='https://buy.stripe.com/cNifZgh0HeSC0QO0v65ZC00'
-    +'?prefilled_email='+encodeURIComponent(em)
-    +'&client_reference_id='+encodeURIComponent(ref);
-
-  cart=[];renderCart();
-  setTimeout(function(){ window.location.href=stripeUrl; },500);
+  // Call Netlify serverless function to create real Stripe Checkout session
+  fetch('/api/create-checkout',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      items:cart.map(function(i){return{name:i.name,size:i.size,qty:i.qty,price:i.price};}),
+      email:em,
+      ref:ref,
+      shipping:{name:fn+' '+ln,address:ad+', '+cy+', '+ps+', '+ct}
+    })
+  })
+  .then(function(r){return r.json();})
+  .then(function(data){
+    if(data.url){
+      cart=[];renderCart();
+      window.location.href=data.url;
+    } else {
+      btn.innerHTML='Place Order';
+      btn.disabled=false;
+      alert('Payment error: '+(data.error||'Unknown error. Please try again.'));
+    }
+  })
+  .catch(function(){
+    btn.innerHTML='Place Order';
+    btn.disabled=false;
+    alert('Connection error. Please check your internet and try again.');
+  });
 }
 
 
